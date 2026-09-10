@@ -1,58 +1,98 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Elegansky Private Printing System
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Laravel 13 + Blade application for private company document and image printing. Employees upload files, administrators manage users and printers, and a separately authenticated Windows agent performs physical printing.
 
-## About Laravel
+## Installation
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
-
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+Laravel and Breeze are already installed. Do not reinstall them.
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+cp .env.example .env
+composer install
+npm install
+php artisan key:generate
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Configure MySQL in `.env`:
 
-## Contributing
+```dotenv
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=eleganskyPrinterSystem
+DB_USERNAME=your_database_user
+DB_PASSWORD=your_database_password
+QUEUE_CONNECTION=database
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Uploaded files use Laravel's private `local` disk under `storage/app/private/print-jobs`. Supported types are PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, RTF, JPG/JPEG, PNG, BMP, GIF, TIFF and WebP. Validation checks both the extension and detected content; Open XML Office files also have their archive structure checked. Do not run `storage:link` for print documents.
 
-## Code of Conduct
+## Database and first administrator
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Set a development-only password, migrate, and seed:
 
-## Security Vulnerabilities
+```dotenv
+DEV_ADMIN_PASSWORD=replace-with-a-strong-development-password
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```bash
+php artisan migrate
+php artisan db:seed
+```
 
-## License
+The username is `admin`. Remove `DEV_ADMIN_PASSWORD` from production configuration after initial provisioning. In production, create the first administrator through a secure deployment procedure or a one-time interactive command; never hard-code its password.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+The seeder creates one development printer and prints its device token once in the terminal. Printers created in the admin UI also show their token once.
+
+## Authentication and roles
+
+Breeze authenticates with `username` and `password`; email registration, verification, and password-reset routes are disabled. Only administrators create accounts. Supported roles are exactly `admin` and `employee`.
+
+- Employee dashboard: `/dashboard`
+- Admin dashboard: `/admin/dashboard`
+- Login: `/login`
+
+## Printer API
+
+Every request needs `Authorization: Bearer DEVICE_TOKEN`. Device tokens are generated randomly and only SHA-256 hashes are stored.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| POST | `/api/printer/heartbeat` | Mark device online and update last seen time |
+| GET | `/api/printer/jobs/next` | Atomically lock and claim the next assigned pending job |
+| POST | `/api/printer/jobs/{job}/claim` | Idempotently confirm the claim |
+| GET | `/api/printer/jobs/{job}/download` | Authorized private document/image download |
+| POST | `/api/printer/jobs/{job}/printing` | Mark printing started |
+| POST | `/api/printer/jobs/{job}/printed` | Mark printing successful |
+| POST | `/api/printer/jobs/{job}/failed` | Record failure and `error_message` |
+
+Agents only access jobs assigned to their authenticated printer. The claim operation uses a database transaction and `lockForUpdate()`.
+
+## Running locally
+
+```bash
+php artisan config:clear
+php artisan cache:clear
+php artisan serve
+npm run dev
+```
+
+Laravel's database queue is available for maintenance and notifications:
+
+```bash
+php artisan queue:work
+```
+
+The business print queue is the `print_jobs` table. Physical printing never depends on `queue:work`; it is handled by the Python agent.
+
+## Verification
+
+```bash
+php artisan migrate
+php artisan test
+php artisan route:list
+vendor/bin/pint --format agent
+npm run build
+```
+
+This application is intended for the company private network/WireGuard. Terminate TLS at the existing private infrastructure, keep `.env` secret, back up MySQL and private storage together, and never expose printer agents or private document storage publicly.
