@@ -86,6 +86,7 @@ it('creates a private print job from a valid DOCX document', function () {
     $printJob = PrintJob::query()->sole();
     $response->assertRedirect(route('print-jobs.show', $printJob));
     expect($printJob->original_name)->toBe('company-letter.docx')
+        ->and($printJob->mime_type)->toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
         ->and($printJob->file_extension)->toBe('docx')
         ->and($printJob->file_path)->toEndWith('.docx');
     Storage::disk('local')->assertExists($printJob->file_path);
