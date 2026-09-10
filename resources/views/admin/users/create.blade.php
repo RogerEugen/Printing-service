@@ -1,0 +1,1 @@
+<x-app-layout><x-slot name="header"><h1 class="text-2xl font-bold">Create User</h1><p class="mt-1 text-sm text-slate-500">Passwords are set by an administrator.</p></x-slot><form method="POST" action="{{ route('admin.users.store') }}" class="mx-auto max-w-2xl space-y-6 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">@include('admin.users._form')</form></x-app-layout>

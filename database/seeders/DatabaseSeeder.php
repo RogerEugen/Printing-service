@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\UserRole;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -15,11 +16,17 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $developmentPassword = config('printing.development_admin_password');
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        if (is_string($developmentPassword) && $developmentPassword !== '') {
+            User::query()->updateOrCreate(
+                ['username' => 'admin'],
+                ['password' => $developmentPassword, 'role' => UserRole::Admin, 'is_active' => true],
+            );
+        } else {
+            $this->command?->warn('DEV_ADMIN_PASSWORD is empty; development admin was not created.');
+        }
+
+        $this->call(DevelopmentPrinterSeeder::class);
     }
 }
