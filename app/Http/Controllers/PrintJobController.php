@@ -44,7 +44,7 @@ class PrintJobController extends Controller
     {
         $file = $request->file('document');
         $extension = Str::lower($file->getClientOriginalExtension());
-        $mimeType = $file->getMimeType() ?: 'application/octet-stream';
+        $mimeType = config('printing.mime_types.'.$extension, 'application/octet-stream');
         $safeOriginalName = Str::limit(
             preg_replace('/[^A-Za-z0-9._ -]/u', '_', basename($file->getClientOriginalName())) ?: 'document.'.$extension,
             200,
