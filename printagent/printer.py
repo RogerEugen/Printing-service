@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import platform
+import re
+import shutil
 import subprocess
+import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -22,6 +26,7 @@ SUPPORTED_EXTENSIONS = frozenset({
 })
 
 SUMATRA_EXTENSIONS = frozenset({"pdf", "jpg", "jpeg", "png", "bmp", "gif", "tif", "tiff", "webp"})
+OFFICE_EXTENSIONS = frozenset({"doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf"})
 
 
 def validate_downloaded_file(file_path: Path, extension: str) -> None:
@@ -81,8 +86,6 @@ class WindowsDocumentPrinter:
         self.config = config
 
     def print_file(self, file_path: Path, copies: int) -> None:
-        if platform.system() != "Windows":
-            raise PrinterError("Physical printing is supported only on Windows")
         if not file_path.is_file():
             raise PrinterError(f"Print file does not exist: {file_path}")
 
@@ -91,6 +94,16 @@ class WindowsDocumentPrinter:
             raise PrinterError(f"Unsupported print file type: .{extension}")
 
         method = self.config.print_method
+        operating_system = platform.system()
+        if operating_system == "Linux":
+            if method not in {"auto", "cups"}:
+                raise PrinterError("Ubuntu printing requires PRINT_METHOD=auto or cups")
+            self._print_with_cups(file_path, copies, extension)
+            return
+        if operating_system != "Windows":
+            raise PrinterError(f"Physical printing is not supported on {operating_system}")
+        if method == "cups":
+            raise PrinterError("PRINT_METHOD=cups is supported only on Linux")
         if method == "sumatra" and extension not in SUMATRA_EXTENSIONS:
             raise PrinterError(f"SumatraPDF cannot print .{extension}; use PRINT_METHOD=auto or shell")
         if extension in SUMATRA_EXTENSIONS and (
@@ -100,6 +113,127 @@ class WindowsDocumentPrinter:
             self._print_with_sumatra(file_path, copies)
             return
         self._print_with_windows_shell(file_path, copies)
+
+    def _print_with_cups(self, file_path: Path, copies: int, extension: str) -> None:
+        lp_executable = shutil.which("lp")
+        lpstat_executable = shutil.which("lpstat")
+        cancel_executable = shutil.which("cancel")
+        if lp_executable is None or lpstat_executable is None or cancel_executable is None:
+            raise PrinterError("CUPS lp, lpstat, and cancel commands are required; install the cups-client package")
+
+        if extension in OFFICE_EXTENSIONS:
+            with tempfile.TemporaryDirectory(prefix="elegansky-convert-") as directory:
+                converted_path = self._convert_office_to_pdf(file_path, Path(directory))
+                job_id = self._submit_to_cups(lp_executable, converted_path, copies, file_path.name)
+                self._wait_for_cups_job(lpstat_executable, cancel_executable, job_id)
+            return
+
+        job_id = self._submit_to_cups(lp_executable, file_path, copies, file_path.name)
+        self._wait_for_cups_job(lpstat_executable, cancel_executable, job_id)
+
+    def _convert_office_to_pdf(self, file_path: Path, output_directory: Path) -> Path:
+        libreoffice_executable = shutil.which("libreoffice") or shutil.which("soffice")
+        if libreoffice_executable is None:
+            raise PrinterError("LibreOffice is required to print Office documents on Ubuntu")
+
+        result = subprocess.run(
+            [
+                libreoffice_executable,
+                "--headless",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                str(output_directory),
+                str(file_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        converted_files = list(output_directory.glob("*.pdf"))
+        if result.returncode != 0 or len(converted_files) != 1:
+            detail = result.stderr.strip() or result.stdout.strip() or "unknown LibreOffice conversion error"
+            raise PrinterError(detail)
+
+        converted_path = converted_files[0]
+        validate_downloaded_file(converted_path, "pdf")
+
+        return converted_path
+
+    def _submit_to_cups(self, lp_executable: str, file_path: Path, copies: int, job_name: str) -> str:
+        command = [lp_executable]
+        if self.config.default_printer:
+            command.extend(["-d", self.config.default_printer])
+        command.extend(["-n", str(copies), "-t", job_name, "--", str(file_path)])
+
+        result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip() or "unknown CUPS error"
+            raise PrinterError(detail)
+
+        match = re.search(r"request id is ([^\s]+)", result.stdout, flags=re.IGNORECASE)
+        if match is None:
+            raise PrinterError("CUPS accepted the file but did not return a job ID")
+
+        return match.group(1)
+
+    def _wait_for_cups_job(self, lpstat_executable: str, cancel_executable: str, job_id: str) -> None:
+        deadline = time.monotonic() + self.config.cups_job_timeout
+        destination = job_id.rsplit("-", 1)[0]
+
+        while time.monotonic() < deadline:
+            active = subprocess.run(
+                [lpstat_executable, "-W", "not-completed", "-o", destination],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if job_id not in active.stdout:
+                completed = subprocess.run(
+                    [lpstat_executable, "-W", "completed", "-o", destination],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                if completed.returncode == 0 and job_id in completed.stdout:
+                    return
+
+            time.sleep(self.config.cups_poll_interval)
+
+        cancellation = subprocess.run(
+            [cancel_executable, job_id],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if cancellation.returncode != 0:
+            cancellation_detail = cancellation.stderr.strip() or cancellation.stdout.strip()
+            if "already completed" in cancellation_detail.lower():
+                return
+
+            completed = subprocess.run(
+                [lpstat_executable, "-W", "completed", "-o", destination],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if completed.returncode == 0 and job_id in completed.stdout:
+                return
+
+            detail = cancellation_detail or "CUPS refused cancellation"
+            raise PrinterError(
+                f"CUPS job {job_id} timed out and cancellation was not confirmed: {detail}. "
+                "Check the CUPS queue before reconnecting the printer"
+            )
+
+        raise PrinterError(
+            f"CUPS job {job_id} did not complete within {self.config.cups_job_timeout} seconds and was cancelled"
+        )
 
     def _print_with_sumatra(self, file_path: Path, copies: int) -> None:
         executable = self.config.sumatra_path

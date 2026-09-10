@@ -17,12 +17,14 @@ class ConfigTest(unittest.TestCase):
             "DOWNLOAD_DIR": "./test-downloads",
         }
 
-        with patch.dict(os.environ, environment, clear=True):
+        with patch("config.load_dotenv"), patch.dict(os.environ, environment, clear=True):
             config = Config.from_env()
 
         self.assertEqual(config.server_url, "https://print.internal")
         self.assertEqual(config.printer_name, "OFFICE-01")
         self.assertEqual(config.download_dir, Path("./test-downloads").resolve())
+        self.assertEqual(config.cups_job_timeout, 300)
+        self.assertEqual(config.cups_poll_interval, 2)
 
     def test_rejects_a_missing_device_token(self) -> None:
         environment = {
@@ -31,9 +33,22 @@ class ConfigTest(unittest.TestCase):
             "PRINTER_NAME": "OFFICE-01",
         }
 
-        with patch.dict(os.environ, environment, clear=True):
+        with patch("config.load_dotenv"), patch.dict(os.environ, environment, clear=True):
             with self.assertRaises(ConfigurationError):
                 Config.from_env()
+
+    def test_accepts_cups_as_the_print_method(self) -> None:
+        environment = {
+            "PRINT_SERVER_URL": "http://127.0.0.1:8001",
+            "PRINTER_TOKEN": "a" * 80,
+            "PRINTER_NAME": "CANON-UBUNTU",
+            "PRINT_METHOD": "cups",
+        }
+
+        with patch("config.load_dotenv"), patch.dict(os.environ, environment, clear=True):
+            config = Config.from_env()
+
+        self.assertEqual(config.print_method, "cups")
 
 
 if __name__ == "__main__":

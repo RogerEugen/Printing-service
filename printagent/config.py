@@ -34,6 +34,8 @@ class Config:
     check_interval: int
     report_retry_interval: int
     request_timeout: int
+    cups_job_timeout: int
+    cups_poll_interval: int
     download_dir: Path
     default_printer: str | None
     print_method: str
@@ -57,8 +59,8 @@ class Config:
             raise ConfigurationError("PRINTER_TOKEN is missing or too short")
         if not printer_name:
             raise ConfigurationError("PRINTER_NAME is required")
-        if print_method not in {"auto", "sumatra", "shell"}:
-            raise ConfigurationError("PRINT_METHOD must be auto, sumatra, or shell")
+        if print_method not in {"auto", "sumatra", "shell", "cups"}:
+            raise ConfigurationError("PRINT_METHOD must be auto, sumatra, shell, or cups")
 
         sumatra_raw = os.getenv("SUMATRA_PATH", "").strip()
         return cls(
@@ -68,6 +70,8 @@ class Config:
             check_interval=_positive_int("CHECK_INTERVAL", 5),
             report_retry_interval=_positive_int("REPORT_RETRY_INTERVAL", 5),
             request_timeout=_positive_int("REQUEST_TIMEOUT", 30),
+            cups_job_timeout=_positive_int("CUPS_JOB_TIMEOUT", 300),
+            cups_poll_interval=_positive_int("CUPS_POLL_INTERVAL", 2),
             download_dir=Path(os.getenv("DOWNLOAD_DIR", "./downloads")).expanduser().resolve(),
             default_printer=os.getenv("DEFAULT_PRINTER", "").strip() or None,
             print_method=print_method,

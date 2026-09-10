@@ -2,6 +2,8 @@
 
 Background Python worker that authenticates as one printer, claims assigned jobs from Laravel, downloads private documents or images, prints them through Windows, and reports the final status.
 
+For the complete VPS and Windows production checklist in Swahili, see [`../DEPLOYMENT_GUIDE_SW.md`](../DEPLOYMENT_GUIDE_SW.md).
+
 ## Windows setup
 
 Open PowerShell in this directory:
@@ -38,6 +40,20 @@ SUMATRA_PATH=C:\Program Files\SumatraPDF\SumatraPDF.exe
 `PRINT_METHOD=auto` uses SumatraPDF for PDF and image files when the configured executable exists. Word, Excel, PowerPoint, TXT and RTF files use their Windows `printto` association. Install Microsoft Office or another compatible application and confirm each format can be printed manually from the same Windows account. `PRINT_METHOD=shell` forces Windows file-association printing for every format. Do not use `PRINT_METHOD=sumatra` when the queue includes Office documents.
 
 Supported types are PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, RTF, JPG/JPEG, PNG, BMP, GIF, TIFF and WebP. The agent validates downloaded signatures and Office archive structure before sending a file to a local application.
+
+## Ubuntu localhost testing
+
+On Linux, `PRINT_METHOD=auto` or `PRINT_METHOD=cups` submits PDF, image and text files through the local `lp` command. Office and RTF files are converted to PDF with LibreOffice first.
+
+```bash
+sudo systemctl enable --now cups
+sudo apt install libreoffice
+lpstat -p -d
+```
+
+Set `DEFAULT_PRINTER` to the exact CUPS queue name, for example `iR2224-UFR-II`. The agent checks the `lp` exit status and only reports a job as printed after CUPS accepts it.
+
+`CUPS_JOB_TIMEOUT` controls how long the agent waits for the spool job to complete (default 300 seconds), while `CUPS_POLL_INTERVAL` controls status polling. If the printer stays unavailable until the timeout, the agent cancels the CUPS job before reporting failure so it cannot print unexpectedly after reconnection.
 
 ## Run and test
 
