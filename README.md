@@ -2,6 +2,8 @@
 
 Laravel 13 + Blade application for private company document and image printing. Employees upload files, administrators manage users and printers, and a separately authenticated Windows agent performs physical printing.
 
+For the VPS and Windows production checklist, see [`../DEPLOYMENT_GUIDE_SW.md`](../DEPLOYMENT_GUIDE_SW.md).
+
 ## Installation
 
 Laravel and Breeze are already installed. Do not reinstall them.
