@@ -1,20 +1,3 @@
-FROM node:22-alpine AS frontend
-
-WORKDIR /build
-
-COPY package.json package-lock.json ./
-RUN npm config set fetch-retries 5 \
-    && npm config set fetch-retry-mintimeout 20000 \
-    && npm config set fetch-retry-maxtimeout 120000 \
-    && npm config set fetch-timeout 600000 \
-    && npm ci --no-audit --no-fund --prefer-offline
-
-COPY resources ./resources
-COPY public ./public
-COPY postcss.config.js tailwind.config.js vite.config.js ./
-RUN npm run build
-
-
 FROM composer:2 AS vendor
 
 WORKDIR /build
@@ -51,7 +34,6 @@ WORKDIR /var/www/html
 
 COPY --chown=www-data:www-data . .
 COPY --from=vendor --chown=www-data:www-data /build/vendor ./vendor
-COPY --from=frontend --chown=www-data:www-data /build/public/build ./public/build
 COPY docker/php/production.ini /usr/local/etc/php/conf.d/zz-production.ini
 COPY docker/php/www.conf /usr/local/etc/php-fpm.d/zz-www.conf
 
