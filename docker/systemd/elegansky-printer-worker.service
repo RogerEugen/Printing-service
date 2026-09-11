@@ -7,7 +7,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/srv/apps/printer/admin01/projects/printersystem
-ExecStart=/usr/bin/docker compose --project-name elegansky-printer up --no-deps --no-recreate worker
+ExecStart=/usr/bin/docker compose --project-name elegansky-printer up --no-deps worker
 ExecStop=/usr/bin/docker compose --project-name elegansky-printer stop --timeout 30 worker
 Restart=always
 RestartSec=5
