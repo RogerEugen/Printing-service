@@ -97,6 +97,7 @@ services:
     ports:
       - "127.0.0.1:${APP_HTTP_PORT:-18082}:80"
     networks:
+      - printer-edge
       - printer-internal
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/up"]
@@ -129,6 +130,8 @@ services:
       - no-new-privileges:true
 
 networks:
+  printer-edge:
+    driver: bridge
   printer-internal:
     driver: bridge
     internal: true
