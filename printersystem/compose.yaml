@@ -1,0 +1,132 @@
+name: elegansky-printer
+
+x-app-image: &app-image
+  image: elegansky-printer-app:${APP_IMAGE_TAG:-latest}
+  build:
+    context: .
+    target: app
+
+x-app-environment: &app-environment
+  env_file:
+    - .env
+  networks:
+    - printer-internal
+  volumes:
+    - ${PRINTER_DATA_ROOT:-/srv/apps/printer/admin01/data}/storage:/var/www/html/storage
+    - ${PRINTER_DATA_ROOT:-/srv/apps/printer/admin01/data}/bootstrap-cache:/var/www/html/bootstrap/cache
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    networks:
+      - printer-internal
+    volumes:
+      - ${PRINTER_DATA_ROOT:-/srv/apps/printer/admin01/data}/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+  storage-init:
+    <<: *app-image
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mkdir -p
+        /var/www/html/bootstrap/cache
+        /var/www/html/storage/app/private/print-jobs
+        /var/www/html/storage/framework/cache/data
+        /var/www/html/storage/framework/sessions
+        /var/www/html/storage/framework/views
+        /var/www/html/storage/logs
+        && chown -R www-data:www-data /var/www/html/bootstrap/cache /var/www/html/storage
+        && find /var/www/html/bootstrap/cache -type d -exec chmod 2770 {} +
+        && find /var/www/html/bootstrap/cache -type f -exec chmod 0660 {} +
+        && find /var/www/html/storage -type d -exec chmod 2770 {} +
+        && find /var/www/html/storage -type f -exec chmod 0660 {} +
+    volumes:
+      - ${PRINTER_DATA_ROOT:-/srv/apps/printer/admin01/data}/storage:/var/www/html/storage
+      - ${PRINTER_DATA_ROOT:-/srv/apps/printer/admin01/data}/bootstrap-cache:/var/www/html/bootstrap/cache
+    networks:
+      - printer-internal
+    security_opt:
+      - no-new-privileges:true
+
+  app:
+    <<: [*app-image, *app-environment]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "php-fpm", "-t"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    image: elegansky-printer-web:${APP_IMAGE_TAG:-latest}
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${APP_HTTP_PORT:-18082}:80"
+    networks:
+      - printer-internal
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/up"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+  worker:
+    <<: [*app-image, *app-environment]
+    user: "www-data:www-data"
+    restart: "no"
+    init: true
+    command:
+      - php
+      - artisan
+      - queue:work
+      - --sleep=3
+      - --tries=3
+      - --timeout=120
+      - --no-interaction
+    depends_on:
+      db:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  printer-internal:
+    driver: bridge
+    internal: true

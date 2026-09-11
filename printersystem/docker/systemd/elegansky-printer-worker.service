@@ -1,0 +1,17 @@
+[Unit]
+Description=Elegansky Printer Laravel Queue Worker
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/apps/printer/admin01/projects/printersystem
+ExecStart=/usr/bin/docker compose --project-name elegansky-printer up --no-deps --no-recreate worker
+ExecStop=/usr/bin/docker compose --project-name elegansky-printer stop --timeout 30 worker
+Restart=always
+RestartSec=5
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target
