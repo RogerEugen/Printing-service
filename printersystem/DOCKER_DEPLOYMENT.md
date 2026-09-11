@@ -12,6 +12,8 @@ This deployment is isolated under `/srv/apps/printer/admin01` and publishes the 
 
 The Compose project name is `elegansky-printer`; it does not reuse another application's containers, network, database or volumes.
 
+Image builds use the host network only while downloading locked Composer/npm dependencies. Runtime services remain on the isolated `printer-internal` Docker network, and only the web container publishes `127.0.0.1:18082`.
+
 ## First deployment
 
 Clone the Laravel-only production branch directly into the required directory, then create the untracked production environment:
