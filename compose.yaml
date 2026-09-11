@@ -5,6 +5,7 @@ x-app-image: &app-image
   build:
     context: .
     target: app
+    network: host
 
 x-app-environment: &app-environment
   env_file:
@@ -88,6 +89,7 @@ services:
     build:
       context: .
       target: web
+      network: host
     restart: unless-stopped
     depends_on:
       app:
