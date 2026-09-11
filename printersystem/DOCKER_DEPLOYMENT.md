@@ -47,7 +47,7 @@ docker compose run --rm app php artisan app:create-admin admin01
 
 ## Host Nginx and queue worker
 
-The committed host Nginx file is a template for a new site; it does not replace an existing site. Confirm the hostname and internal DNS before enabling it. Validate the whole Nginx configuration before reload:
+The committed host Nginx file is a new HTTPS site; it does not replace an existing site. It expects the DNS-01 certificate at `/etc/letsencrypt/live/printer.eleganskyfinance.com`. Confirm that certificate and the internal DNS override before enabling it. Validate the whole Nginx configuration before reload:
 
 ```bash
 sudo install -o root -g root -m 0644 docker/nginx/printersystem-host.conf /etc/nginx/sites-available/printersystem
