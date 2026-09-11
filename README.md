@@ -2,7 +2,9 @@
 
 Laravel 13 + Blade application for private company document and image printing. Employees upload files, administrators manage users and printers, and a separately authenticated Windows agent performs physical printing.
 
-For the VPS and Windows production checklist, see [`../DEPLOYMENT_GUIDE_SW.md`](../DEPLOYMENT_GUIDE_SW.md).
+For the combined VPS and Windows checklist, see the [workspace deployment guide](https://github.com/RogerEugen/Printing-service/blob/main/DEPLOYMENT_GUIDE_SW.md).
+
+For the isolated Docker deployment used by the production VPS, see [`DOCKER_DEPLOYMENT.md`](DOCKER_DEPLOYMENT.md).
 
 ## Installation
 
