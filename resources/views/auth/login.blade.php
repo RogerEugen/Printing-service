@@ -1,8 +1,6 @@
 <x-guest-layout>
     <div class="mb-8 text-center">
-        <div class="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-2xl bg-cyan-600 text-lg font-extrabold text-white shadow-lg shadow-cyan-600/20">
-            <x-icon name="printer" class="h-8 w-8" />
-        </div>
+        <x-brand-logo class="mx-auto mb-5 h-20 w-20 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg shadow-slate-900/10" />
         <p class="text-xs font-bold uppercase tracking-[0.2em] text-cyan-700">Elegansky Print</p>
         <h1 class="mt-2 text-2xl font-bold tracking-tight text-slate-900">Welcome back</h1>
         <p class="mt-2 text-sm text-slate-500">Sign in using your company account.</p>

@@ -2,7 +2,7 @@
     <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <div class="flex items-center gap-7">
             <a href="{{ route('admin.dashboard') }}" class="flex items-center gap-3 font-bold tracking-tight text-slate-900">
-                <span class="grid h-9 w-9 place-items-center rounded-xl bg-cyan-600 text-xs font-extrabold text-white shadow-sm">EP</span>
+                <x-brand-logo class="h-10 w-10 rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm" />
                 <span class="hidden sm:inline">Elegansky Print</span>
             </a>
 
