@@ -27,6 +27,7 @@ SUPPORTED_EXTENSIONS = frozenset({
 
 SUMATRA_EXTENSIONS = frozenset({"pdf", "jpg", "jpeg", "png", "bmp", "gif", "tif", "tiff", "webp"})
 OFFICE_EXTENSIONS = frozenset({"doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf"})
+WINDOWS_JOB_DISCOVERY_TIMEOUT = 10
 
 
 def validate_downloaded_file(file_path: Path, extension: str) -> None:
@@ -240,11 +241,12 @@ class WindowsDocumentPrinter:
         if executable is None or not executable.is_file():
             raise PrinterError("SUMATRA_PATH does not point to SumatraPDF.exe")
 
+        win32print = self._load_win32print()
+        printer_name = self.config.default_printer or win32print.GetDefaultPrinter()
+        existing_job_ids = set(self._windows_jobs(win32print, printer_name))
+
         command = [str(executable), "-silent", "-print-settings", f"{copies}x"]
-        if self.config.default_printer:
-            command.extend(["-print-to", self.config.default_printer])
-        else:
-            command.append("-print-to-default")
+        command.extend(["-print-to", printer_name])
         command.append(str(file_path))
 
         result = subprocess.run(command, capture_output=True, text=True, timeout=300, check=False)
@@ -252,18 +254,156 @@ class WindowsDocumentPrinter:
             detail = result.stderr.strip() or result.stdout.strip() or "unknown SumatraPDF error"
             raise PrinterError(detail)
 
+        self._wait_for_windows_spooler(win32print, printer_name, existing_job_ids, file_path)
+
     def _print_with_windows_shell(self, file_path: Path, copies: int) -> None:
         try:
             import win32api
-            import win32print
         except ImportError as exc:
             raise PrinterError("pywin32 is required for Windows shell printing") from exc
 
+        win32print = self._load_win32print()
         printer_name = self.config.default_printer or win32print.GetDefaultPrinter()
+        existing_job_ids = set(self._windows_jobs(win32print, printer_name))
         for _ in range(copies):
             result = win32api.ShellExecute(0, "printto", str(file_path), f'"{printer_name}"', ".", 0)
             if result <= 32:
                 raise PrinterError(f"Windows print command failed with code {result}")
+
+        self._wait_for_windows_spooler(win32print, printer_name, existing_job_ids, file_path)
+
+    @staticmethod
+    def _load_win32print():
+        try:
+            import win32print
+        except ImportError as exc:
+            raise PrinterError("pywin32 is required for Windows spooler monitoring") from exc
+
+        return win32print
+
+    @staticmethod
+    def _windows_jobs(win32print, printer_name: str) -> dict[int, dict]:
+        printer_handle = win32print.OpenPrinter(printer_name)
+        try:
+            jobs = win32print.EnumJobs(printer_handle, 0, 999, 1)
+        finally:
+            win32print.ClosePrinter(printer_handle)
+
+        return {int(job["JobId"]): job for job in jobs}
+
+    @staticmethod
+    def _matching_windows_job_ids(jobs: dict[int, dict], existing_job_ids: set[int], file_path: Path) -> set[int]:
+        expected_path = str(file_path).casefold()
+        expected_name = file_path.name.casefold()
+
+        return {
+            job_id
+            for job_id, job in jobs.items()
+            if job_id not in existing_job_ids
+            and (
+                expected_path in str(job.get("pDocument", "")).casefold()
+                or expected_name in str(job.get("pDocument", "")).casefold()
+            )
+        }
+
+    @staticmethod
+    def _windows_failure_status(win32print, job: dict) -> str | None:
+        status = int(job.get("Status", 0))
+        failure_flags = {
+            win32print.JOB_STATUS_BLOCKED_DEVQ: "printer queue is blocked",
+            win32print.JOB_STATUS_ERROR: "printer reported an error",
+            win32print.JOB_STATUS_OFFLINE: "printer is offline",
+            win32print.JOB_STATUS_PAPEROUT: "printer is out of paper",
+            win32print.JOB_STATUS_USER_INTERVENTION: "printer needs user intervention",
+        }
+        for flag, message in failure_flags.items():
+            if status & flag:
+                detail = str(job.get("pStatus", "")).strip()
+                return f"{message}: {detail}" if detail else message
+
+        return None
+
+    @staticmethod
+    def _windows_job_completed(win32print, job: dict) -> bool:
+        status = int(job.get("Status", 0))
+        return bool(status & (win32print.JOB_STATUS_COMPLETE | win32print.JOB_STATUS_PRINTED))
+
+    @staticmethod
+    def _cancel_windows_jobs(win32print, printer_name: str, job_ids: set[int]) -> list[int]:
+        failed_cancellations: list[int] = []
+        printer_handle = win32print.OpenPrinter(printer_name)
+        try:
+            for job_id in job_ids:
+                try:
+                    win32print.SetJob(printer_handle, job_id, 0, None, win32print.JOB_CONTROL_CANCEL)
+                except Exception:
+                    failed_cancellations.append(job_id)
+        finally:
+            win32print.ClosePrinter(printer_handle)
+
+        return failed_cancellations
+
+    def _wait_for_windows_spooler(
+        self,
+        win32print,
+        printer_name: str,
+        existing_job_ids: set[int],
+        file_path: Path,
+    ) -> None:
+        started_at = time.monotonic()
+        deadline = started_at + self.config.windows_job_timeout
+        discovery_deadline = min(deadline, started_at + WINDOWS_JOB_DISCOVERY_TIMEOUT)
+        tracked_job_ids: set[int] = set()
+
+        while time.monotonic() < deadline:
+            jobs = self._windows_jobs(win32print, printer_name)
+            if not tracked_job_ids:
+                tracked_job_ids = self._matching_windows_job_ids(jobs, existing_job_ids, file_path)
+                if not tracked_job_ids:
+                    if time.monotonic() >= discovery_deadline:
+                        # A small job can be submitted and removed before the first
+                        # enumeration. Sumatra's successful exit remains the best
+                        # available confirmation in that race.
+                        return
+                    time.sleep(self.config.windows_poll_interval)
+                    continue
+
+            active_job_ids = tracked_job_ids.intersection(jobs)
+            if not active_job_ids:
+                return
+
+            completed_job_ids = {
+                job_id
+                for job_id in active_job_ids
+                if self._windows_job_completed(win32print, jobs[job_id])
+            }
+            tracked_job_ids.difference_update(completed_job_ids)
+            if not tracked_job_ids:
+                return
+
+            for job_id in tracked_job_ids:
+                failure = self._windows_failure_status(win32print, jobs[job_id])
+                if failure:
+                    failed_cancellations = self._cancel_windows_jobs(win32print, printer_name, tracked_job_ids)
+                    cancellation_note = (
+                        f" Cancellation failed for Windows job(s): {sorted(failed_cancellations)}."
+                        if failed_cancellations
+                        else " The queued job was cancelled."
+                    )
+                    raise PrinterError(f"Windows job {job_id} failed because {failure}.{cancellation_note}")
+
+            time.sleep(self.config.windows_poll_interval)
+
+        failed_cancellations = self._cancel_windows_jobs(win32print, printer_name, tracked_job_ids)
+        if failed_cancellations:
+            raise PrinterError(
+                f"Windows print job timed out after {self.config.windows_job_timeout} seconds and cancellation "
+                f"failed for job(s) {sorted(failed_cancellations)}. Check the Windows print queue before retrying"
+            )
+
+        raise PrinterError(
+            f"Windows print job did not complete within {self.config.windows_job_timeout} seconds and was cancelled"
+        )
 
 
 WindowsPdfPrinter = WindowsDocumentPrinter

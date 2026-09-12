@@ -194,5 +194,74 @@ class CupsPrintingTest(unittest.TestCase):
                 WindowsDocumentPrinter(config).print_file(document_path, 1)
 
 
+class WindowsSpoolerMonitoringTest(unittest.TestCase):
+    @staticmethod
+    def win32print() -> SimpleNamespace:
+        return SimpleNamespace(
+            JOB_STATUS_BLOCKED_DEVQ=0x0200,
+            JOB_STATUS_COMPLETE=0x1000,
+            JOB_STATUS_ERROR=0x0002,
+            JOB_STATUS_OFFLINE=0x0020,
+            JOB_STATUS_PAPEROUT=0x0040,
+            JOB_STATUS_PRINTED=0x0080,
+            JOB_STATUS_USER_INTERVENTION=0x0400,
+            JOB_CONTROL_CANCEL=3,
+        )
+
+    @staticmethod
+    def config(timeout: int = 5) -> SimpleNamespace:
+        return SimpleNamespace(windows_job_timeout=timeout, windows_poll_interval=1)
+
+    def test_waits_until_the_matching_windows_job_leaves_the_queue(self) -> None:
+        printer = WindowsDocumentPrinter(self.config())
+        document_path = Path(r"C:\downloads\job-7-example.jpg")
+        queued_job = {41: {"JobId": 41, "pDocument": str(document_path), "Status": 0}}
+
+        with (
+            patch.object(printer, "_windows_jobs", side_effect=[queued_job, {}]),
+            patch("printer.time.monotonic", side_effect=[0, 0, 1]),
+            patch("printer.time.sleep"),
+        ):
+            printer._wait_for_windows_spooler(self.win32print(), "Canon", set(), document_path)
+
+    def test_cancels_and_fails_a_windows_job_with_an_error_status(self) -> None:
+        printer = WindowsDocumentPrinter(self.config())
+        document_path = Path(r"C:\downloads\job-8-example.jpg")
+        queued_job = {
+            43: {
+                "JobId": 43,
+                "pDocument": str(document_path),
+                "Status": self.win32print().JOB_STATUS_OFFLINE,
+                "pStatus": "Offline",
+            },
+        }
+
+        with (
+            patch.object(printer, "_windows_jobs", return_value=queued_job),
+            patch.object(printer, "_cancel_windows_jobs", return_value=[]) as cancel_jobs,
+            patch("printer.time.monotonic", side_effect=[0, 0]),
+        ):
+            with self.assertRaisesRegex(PrinterError, "printer is offline"):
+                printer._wait_for_windows_spooler(self.win32print(), "Canon", set(), document_path)
+
+        cancel_jobs.assert_called_once_with(self.win32print(), "Canon", {43})
+
+    def test_cancels_and_fails_a_stuck_windows_job_at_timeout(self) -> None:
+        printer = WindowsDocumentPrinter(self.config(timeout=5))
+        document_path = Path(r"C:\downloads\job-9-example.jpg")
+        queued_job = {45: {"JobId": 45, "pDocument": str(document_path), "Status": 0}}
+
+        with (
+            patch.object(printer, "_windows_jobs", return_value=queued_job),
+            patch.object(printer, "_cancel_windows_jobs", return_value=[]) as cancel_jobs,
+            patch("printer.time.monotonic", side_effect=[0, 0, 6]),
+            patch("printer.time.sleep"),
+        ):
+            with self.assertRaisesRegex(PrinterError, "did not complete within 5 seconds and was cancelled"):
+                printer._wait_for_windows_spooler(self.win32print(), "Canon", set(), document_path)
+
+        cancel_jobs.assert_called_once_with(self.win32print(), "Canon", {45})
+
+
 if __name__ == "__main__":
     unittest.main()

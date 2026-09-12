@@ -25,6 +25,8 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.download_dir, Path("./test-downloads").resolve())
         self.assertEqual(config.cups_job_timeout, 300)
         self.assertEqual(config.cups_poll_interval, 2)
+        self.assertEqual(config.windows_job_timeout, 300)
+        self.assertEqual(config.windows_poll_interval, 2)
 
     def test_rejects_a_missing_device_token(self) -> None:
         environment = {

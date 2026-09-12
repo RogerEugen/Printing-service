@@ -36,6 +36,8 @@ class Config:
     request_timeout: int
     cups_job_timeout: int
     cups_poll_interval: int
+    windows_job_timeout: int
+    windows_poll_interval: int
     download_dir: Path
     default_printer: str | None
     print_method: str
@@ -72,6 +74,8 @@ class Config:
             request_timeout=_positive_int("REQUEST_TIMEOUT", 30),
             cups_job_timeout=_positive_int("CUPS_JOB_TIMEOUT", 300),
             cups_poll_interval=_positive_int("CUPS_POLL_INTERVAL", 2),
+            windows_job_timeout=_positive_int("WINDOWS_JOB_TIMEOUT", 300),
+            windows_poll_interval=_positive_int("WINDOWS_POLL_INTERVAL", 2),
             download_dir=Path(os.getenv("DOWNLOAD_DIR", "./downloads")).expanduser().resolve(),
             default_printer=os.getenv("DEFAULT_PRINTER", "").strip() or None,
             print_method=print_method,

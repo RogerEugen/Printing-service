@@ -55,6 +55,8 @@ Set `DEFAULT_PRINTER` to the exact CUPS queue name, for example `iR2224-UFR-II`.
 
 `CUPS_JOB_TIMEOUT` controls how long the agent waits for the spool job to complete (default 300 seconds), while `CUPS_POLL_INTERVAL` controls status polling. If the printer stays unavailable until the timeout, the agent cancels the CUPS job before reporting failure so it cannot print unexpectedly after reconnection.
 
+On Windows, `WINDOWS_JOB_TIMEOUT` and `WINDOWS_POLL_INTERVAL` provide the equivalent spooler monitoring. A successful SumatraPDF or Windows shell submission is not reported as printed while its matching job remains queued. Jobs with spooler error/offline/paper-out status, or jobs still queued at timeout, are cancelled before the agent reports failure.
+
 ## Run and test
 
 ```powershell
