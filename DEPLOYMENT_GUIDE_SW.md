@@ -220,12 +220,13 @@ Fungua **Task Scheduler > Create Task**:
 - **Name:** `Elegansky Print Agent`
 - **User:** dedicated low-privilege Windows account inayoweza kutumia printer
 - **Trigger:** `At log on` ya account hiyo (rahisi na salama kwa mwanzo)
-- **Action / Program:** `C:\EleganskyPrintAgent\run_agent_windows.cmd`
+- **Action / Program:** `C:\Windows\System32\wscript.exe`
+- **Add arguments:** `"C:\EleganskyPrintAgent\run_agent_windows_hidden.vbs"`
 - **Start in:** `C:\EleganskyPrintAgent`
 - Washa `Restart the task if it fails`.
 - Zima setting ya kusimamisha task baada ya muda mfupi.
 
-Anza kwa **Run only when user is logged on**, hasa kama Office `printto` inatumika. Baada ya PDF/Sumatra unattended test kufaulu, unaweza kutathmini `Run whether user is logged on or not` kwa dedicated account hiyo. Usitumie Administrator account isipokuwa driver inahitaji na sababu imeandikwa.
+Anza kwa **Run only when user is logged on**, hasa kama SumatraPDF imewekwa kwenye profile ya user au Office `printto` inatumika. Hidden launcher inasubiri Python process, hivyo Task Scheduler inaendelea kuonyesha `Running`, inaweza kugundua process failure, na haitoi console ambayo mtumiaji anaweza kufunga kwa bahati mbaya. Baada ya unattended test kufaulu, unaweza kutathmini `Run whether user is logged on or not` kwa dedicated account hiyo. Usitumie Administrator account isipokuwa driver inahitaji na sababu imeandikwa.
 
 Windows Firewall haihitaji inbound port kwa agent: agent hutuma outbound HTTPS kwenda VPS. Usifungue printer port kwenye public internet.
 

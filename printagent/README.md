@@ -65,6 +65,16 @@ python agent.py
 
 `--once` sends a heartbeat and checks once, which is useful for connectivity testing. The normal command runs continuously. Run it under Windows Task Scheduler or a service wrapper using a dedicated low-privilege Windows account that can access the selected printer.
 
+For a hidden Task Scheduler worker, use these action values:
+
+```text
+Program/script: C:\Windows\System32\wscript.exe
+Add arguments: "C:\path\to\printagent\run_agent_windows_hidden.vbs"
+Start in: C:\path\to\printagent
+```
+
+The VBScript waits for Python instead of launching a detached process, so Task Scheduler continues to show `Running`, can detect failures, and does not leave a console window that a user can accidentally close. Use **Run only when user is logged on** for per-user SumatraPDF installations and Office file associations.
+
 The agent logs to `logs/printagent.log`, deletes temporary print files after processing by default, catches individual job failures, and continues polling. If printing succeeds but the network drops, it retries the `printed` acknowledgement without printing the document again.
 
 ## Troubleshooting
